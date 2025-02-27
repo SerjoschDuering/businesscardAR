@@ -11,26 +11,15 @@
     <script src="main.js" defer></script>
   </head>
   <body>
-    <a-scene embedded arjs="trackingMethod: best; sourceType: webcam;">
+    <!-- Activate the smooth-updater component on the scene -->
+    <a-scene embedded arjs="trackingMethod: best; sourceType: webcam;" smooth-updater="smoothingFactor: 0.2">
       <!-- Marker with the "hiro" preset. -->
       <a-marker preset="hiro" id="marker">
         <!-- The fetched model will be applied here -->
-        <a-entity id="model-container"
-                  gltf-model=""
-                  scale="0.1 0.1 0.1"
-                  position="0 0 0">
-        </a-entity>
+        <a-entity id="model-container" gltf-model="" scale="0.1 0.1 0.1" position="0 0 0"></a-entity>
       </a-marker>
       <!-- Dummy box (red cube) to visually validate tracking. -->
-      <a-box id="dummy-box"
-             position="0 0.5 -1"
-             rotation="0 45 0"
-             color="red"
-             depth="0.3"
-             height="0.3"
-             width="0.3"
-             visible="true">
-      </a-box>
+      <a-box id="dummy-box" position="0 0.5 -1" rotation="0 45 0" color="red" depth="0.3" height="0.3" width="0.3" visible="true"></a-box>
       <a-entity camera></a-entity>
     </a-scene>
   </body>
