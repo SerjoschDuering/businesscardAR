@@ -13,13 +13,24 @@
   <body>
     <a-scene embedded arjs="trackingMethod: best; sourceType: webcam;">
       <!-- Marker using local marker pattern file -->
-      <a-marker type="pattern" url="test_marker.patt">
+      <a-marker type="pattern" url="test_marker.patt" id="marker">
+        <!-- The fetched model (if any) will be applied here -->
         <a-entity id="model-container"
                   gltf-model=""
                   scale="0.5 0.5 0.5"
                   position="0 0 0">
         </a-entity>
       </a-marker>
+      <!-- Dummy box to visually validate tracking, always visible (initially anchored in the scene) -->
+      <a-box id="dummy-box"
+             position="0 0.5 -1"
+             rotation="0 45 0"
+             color="red"
+             depth="0.3"
+             height="0.3"
+             width="0.3"
+             visible="true">
+      </a-box>
       <a-entity camera></a-entity>
     </a-scene>
   </body>
