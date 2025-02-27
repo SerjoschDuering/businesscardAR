@@ -1,23 +1,35 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Global variable to keep track of the model’s last known world position.
+    // Get our elements from the scene.
+    const dummyBox = document.getElementById('dummy-box');
+    const markerEl = document.getElementById('marker');
+    const sceneEl = document.querySelector('a-scene');
+  
+    // When the marker is found, attach the dummy box (red cube) so that it follows the marker.
+    markerEl.addEventListener('markerFound', () => {
+      if (dummyBox.parentNode !== markerEl) {
+        markerEl.appendChild(dummyBox);
+        // Reset its local position relative to the marker.
+        dummyBox.setAttribute('position', '0 0 0');
+      }
+    });
+  
+    // When the marker is lost, detach the dummy box so it remains fixed in the scene.
+    markerEl.addEventListener('markerLost', () => {
+      sceneEl.appendChild(dummyBox);
+    });
+  
+    // Global variable for tracking the model’s last known world position.
     let lastGlobalPos = new THREE.Vector3();
-    // Smoothing factor for continuous mode (lower values yield more smoothing).
+    // Smoothing factor for continuous mode.
     const smoothingFactor = 0.2;
-    // Set anchoring mode to "continuous" so the cube follows the marker.
-    const anchoringMode = "continuous"; 
+    // Set anchoring mode to continuous.
+    const anchoringMode = "continuous";
   
     // Helper function to reparent an A-Frame entity while preserving its world transform.
-    // This is used when detaching the model from the marker.
     function reparentPreservingWorldTransform(childEl, newParentEl) {
-      // Update matrixWorld of the child.
       childEl.object3D.updateMatrixWorld(true);
-      // Clone the world transformation matrix.
       const worldMatrix = childEl.object3D.matrixWorld.clone();
-    
-      // Reparent using Three.js' attach method:
       newParentEl.object3D.attach(childEl.object3D);
-    
-      // Copy the world matrix into the child's matrix and decompose it.
       childEl.object3D.matrix.copy(worldMatrix);
       childEl.object3D.matrix.decompose(
         childEl.object3D.position,
@@ -25,9 +37,8 @@ document.addEventListener('DOMContentLoaded', () => {
         childEl.object3D.scale
       );
     }
-    
-    // Helper function: AR.js may apply the marker transform to a child group.
-    // This function returns the marker’s world position from the proper object.
+  
+    // Helper function: attempts to return the marker’s world position.
     function getMarkerWorldPosition(markerEl) {
       let pos = new THREE.Vector3();
       if (markerEl.object3D.children.length > 0) {
@@ -37,54 +48,49 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       return pos;
     }
-    
-    // Log when the A-Frame scene is loaded.
-    const sceneEl = document.querySelector('a-scene');
+  
+    // Log that the A-Frame scene is loaded.
     if (sceneEl) {
       sceneEl.addEventListener('loaded', () => {
         console.log('A-Frame scene loaded!');
       });
     }
-    
-    // Get the model entity (or the cube) to be anchored.
+  
+    // Get the model entity (the fetched model will be attached here).
     const modelEntity = document.getElementById('model-container');
-    
-    // Get the marker element.
-    const markerEl = document.getElementById('marker');
+  
+    // Marker event listeners for the model entity.
     if (markerEl) {
       markerEl.addEventListener('markerFound', () => {
         // Get the marker’s true position.
         let targetPos = getMarkerWorldPosition(markerEl);
-        // Initialize the global position.
         lastGlobalPos.copy(targetPos);
         console.log("Marker found! Position:", targetPos);
-    
-        // In continuous mode, ensure the model entity is attached to the marker.
+  
+        // In continuous mode, attach to the marker.
         if (anchoringMode === "continuous") {
           if (modelEntity.parentNode !== markerEl) {
             markerEl.appendChild(modelEntity);
-            // Reset the model’s local position so that it is aligned.
+            // Reset local position relative to the marker.
             modelEntity.setAttribute('position', "0 0 0");
           }
         }
         modelEntity.setAttribute('visible', true);
       });
-    
+  
       markerEl.addEventListener('markerLost', () => {
         console.log('Marker lost!');
         // Update one last time before detaching.
         let targetPos = getMarkerWorldPosition(markerEl);
         lastGlobalPos.lerp(targetPos, smoothingFactor);
         console.log("Final smoothed position on markerLost:", lastGlobalPos);
-        // Detach from the marker, preserving the world transform.
+        // Detach from the marker while preserving world transform.
         reparentPreservingWorldTransform(modelEntity, sceneEl);
       });
-    
-      // In continuous mode, periodically update the global coordinate if the marker is visible.
+  
+      // Continuous updates for the marker (for smoothing, etc.).
       if (anchoringMode === "continuous") {
         setInterval(() => {
-          // Even if markerEl.object3D.visible is false,
-          // try to get the position from its child transformation.
           let targetPos = getMarkerWorldPosition(markerEl);
           lastGlobalPos.lerp(targetPos, smoothingFactor);
           console.log(
@@ -92,24 +98,22 @@ document.addEventListener('DOMContentLoaded', () => {
           );
         }, 500);
       }
-    
-      // Optional: Periodically log the marker's (local) transformation.
+  
+      // Optional: log the marker’s local transformation every 2 seconds.
       if (markerEl.object3D) {
         setInterval(() => {
           const pos = markerEl.object3D.position;
           const rot = markerEl.object3D.rotation;
           console.log(
-            `Marker local position: x=${pos.x.toFixed(2)}, y=${pos.y.toFixed(2)}, z=${pos.z.toFixed(2)}; ` +
-            `rotation: x=${rot.x.toFixed(2)}, y=${rot.y.toFixed(2)}, z=${rot.z.toFixed(2)}`
+            `Marker local position: x=${pos.x.toFixed(2)}, y=${pos.y.toFixed(2)}, z=${pos.z.toFixed(2)}; rotation: x=${rot.x.toFixed(2)}, y=${rot.y.toFixed(2)}, z=${rot.z.toFixed(2)}`
           );
         }, 2000);
       }
     } else {
       console.error('Marker element not found!');
     }
-    
-    // [The fetching model code remains unchanged below...]
-    // Extract the "id" parameter from the URL.
+  
+    // ------------------- Fetching model data via API -------------------
     const params = new URLSearchParams(window.location.search);
     const modelId = params.get('id');
     if (!modelId) {
@@ -117,11 +121,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     console.log("Extracted model ID:", modelId);
-    
-    // Define your n8n endpoint.
+  
+    // Define the API endpoint.
     const endpoint = 'https://run8n.xyz/webhook-test/getGLTF';
     console.log("Fetching models from endpoint:", endpoint);
-    
+  
     // Create an AbortController with a timeout.
     const controller = new AbortController();
     const timeoutMs = 15000;
@@ -129,8 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error(`Fetch request timed out after ${timeoutMs}ms`);
       controller.abort();
     }, timeoutMs);
-    
-    // Fetch model data via POST.
+  
     fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -146,7 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
       })
       .then(data => {
         console.log("Raw webhook response data:", data);
-    
+  
         // Parse each entry's 'data' property (JSON glTF content).
         const parsedModels = data.map((entry, index) => {
           if (!entry.data) {
@@ -162,12 +165,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
           }
         }).filter(model => model !== null);
-    
+  
         if (parsedModels.length === 0) {
           console.error("No valid model JSON found.");
           return;
         }
-    
+  
         // Create Blob URLs from the parsed glTF JSON objects.
         const modelUrls = parsedModels.map((gltf, index) => {
           try {
@@ -180,25 +183,27 @@ document.addEventListener('DOMContentLoaded', () => {
             return null;
           }
         }).filter(url => url !== null);
-    
+  
         if (modelUrls.length === 0) {
           console.error("No valid blob URLs generated.");
           return;
         }
-    
+  
         // Set the initially fetched model.
         console.log("Setting initial model URL:", modelUrls[0]);
         modelEntity.setAttribute('gltf-model', modelUrls[0]);
-    
-        // If multiple models are available, cycle through them.
+        // Scale the model 5× smaller.
+        modelEntity.setAttribute('scale', '0.01 0.01 0.01');
+  
+        // If multiple models are available, cycle through them every 10 seconds.
         if (modelUrls.length > 1) {
           let currentIndex = 0;
-          console.log("Multiple models detected. Cycling every 5 seconds.");
+          console.log("Multiple models detected. Cycling every 10 seconds.");
           setInterval(() => {
             currentIndex = (currentIndex + 1) % modelUrls.length;
             console.log("Switching to model URL:", modelUrls[currentIndex]);
             modelEntity.setAttribute('gltf-model', modelUrls[currentIndex]);
-          }, 5000);
+          }, 10000);
         }
       })
       .catch(error => {
