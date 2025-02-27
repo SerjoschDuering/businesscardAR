@@ -1,8 +1,32 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Global variable to keep track of the model's last known world position.
     let lastGlobalPos = new THREE.Vector3();
-    // Smoothing factor between 0 and 1 (lower values = more smoothing).
+    // Smoothing factor for continuous mode (lower values yield more smoothing).
     const smoothingFactor = 0.2;
+    // Choose between "once" (anchor only once) or "continuous" (follow marker continually).
+    const anchoringMode = "once"; 
+    let anchored = false; // Tracks whether the model has been anchored in once mode.
+  
+    // Helper function to reparent an A-Frame entity while preserving its world transform.
+    // It uses the underlying Three.js object3D to update the transformation.
+    function reparentPreservingWorldTransform(childEl, newParentEl) {
+      // Update matrixWorld of the child.
+      childEl.object3D.updateMatrixWorld(true);
+      // Get the full world transformation matrix.
+      const worldMatrix = childEl.object3D.matrixWorld.clone();
+  
+      // Reparent using the Three.js attach method:
+      // This will remove the child from its current parent and add it to newParentEl.object3D.
+      newParentEl.object3D.attach(childEl.object3D);
+  
+      // Copy the worldMatrix into the child, then decompose it to update position, quaternion, scale.
+      childEl.object3D.matrix.copy(worldMatrix);
+      childEl.object3D.matrix.decompose(
+        childEl.object3D.position,
+        childEl.object3D.quaternion,
+        childEl.object3D.scale
+      );
+    }
   
     // Log when the A-Frame scene is loaded.
     const sceneEl = document.querySelector('a-scene');
@@ -15,57 +39,69 @@ document.addEventListener('DOMContentLoaded', () => {
     // Get the model that was fetched (the AR content).
     const modelEntity = document.getElementById('model-container');
   
-    // Attach marker event listeners. We'll use these to update our global coordinate
-    // and to reparent the model container so that it either tracks the marker or
-    // stays fixed at its last known (and smoothed) position.
+    // Attach marker event listeners to decide how to update/reparent the model.
     const markerEl = document.getElementById('marker');
     if (markerEl) {
       markerEl.addEventListener('markerFound', () => {
         console.log('Marker found!');
-        // Update global position from the model's (or marker's) world coordinates.
-        let targetPos = new THREE.Vector3();
-        markerEl.object3D.getWorldPosition(targetPos);
-        lastGlobalPos.copy(targetPos); // initialize smoothed position
-        console.log('Updating global position on markerFound:', lastGlobalPos);
+        // In "once" mode, only anchor if not already anchored.
+        if (anchoringMode === "once" && !anchored) {
+          // Capture marker's current world position (for logging or further use).
+          markerEl.object3D.getWorldPosition(lastGlobalPos);
+          console.log("Anchoring model once at:", lastGlobalPos);
   
-        // Reparent the model to the marker (if needed) to follow its transform.
-        if (modelEntity.parentNode !== markerEl) {
-          markerEl.appendChild(modelEntity);
-          // Reset local position so it attaches correctly to the marker.
-          modelEntity.setAttribute('position', "0 0 0");
+          // Detach the model from the marker and attach it to the scene.
+          // This preserves its world transform so it stays fixed in the world.
+          reparentPreservingWorldTransform(modelEntity, sceneEl);
+          anchored = true; 
         }
-        // (Optional) Change visual properties to indicate tracking.
+        // In continuous mode, update the model's location every time the marker is detected.
+        else if (anchoringMode === "continuous") {
+          let targetPos = new THREE.Vector3();
+          markerEl.object3D.getWorldPosition(targetPos);
+          lastGlobalPos.lerp(targetPos, smoothingFactor);
+          console.log("Continuous update, smoothed position:", lastGlobalPos);
+          // If the model is not already attached to the marker, reparent it.
+          if (modelEntity.parentNode !== markerEl) {
+            markerEl.appendChild(modelEntity);
+            modelEntity.setAttribute('position', "0 0 0");
+          }
+        }
+        // Ensure the model is visible.
         modelEntity.setAttribute('visible', true);
       });
   
       markerEl.addEventListener('markerLost', () => {
         console.log('Marker lost!');
-        // On marker lost, first update the last global position one more time.
-        let targetPos = new THREE.Vector3();
-        modelEntity.object3D.getWorldPosition(targetPos);
-        lastGlobalPos.lerp(targetPos, smoothingFactor);
-        console.log('Model last known (smoothed) world position:', lastGlobalPos);
-  
-        // Detach the model from the marker: reparent it back to the scene.
-        sceneEl.appendChild(modelEntity);
-        // Set its position to that last known world coordinate so it stays in place.
-        modelEntity.setAttribute('position', `${lastGlobalPos.x} ${lastGlobalPos.y} ${lastGlobalPos.z}`);
+        if (anchoringMode === "continuous") {
+          let targetPos = new THREE.Vector3();
+          modelEntity.object3D.getWorldPosition(targetPos);
+          lastGlobalPos.lerp(targetPos, smoothingFactor);
+          console.log("Continuous mode, final smoothed position:", lastGlobalPos);
+          // Reparent to the scene, preserving the last world transform.
+          reparentPreservingWorldTransform(modelEntity, sceneEl);
+        }
+        else if (anchoringMode === "once") {
+          // In once mode the model remains anchored from the first detection.
+          console.log("Once mode: model remains anchored at", lastGlobalPos);
+        }
       });
   
-      // Periodically update the global position using a smoothing function.
-      setInterval(() => {
-        if (markerEl.object3D.visible) {
-          let targetPos = new THREE.Vector3();
-          markerEl.object3D.getWorldPosition(targetPos);
-          // Smoothly interpolate the current smoothed position toward the new measurement.
-          lastGlobalPos.lerp(targetPos, smoothingFactor);
-          console.log(
-            `Smoothed global position updated: x=${lastGlobalPos.x.toFixed(2)}, y=${lastGlobalPos.y.toFixed(2)}, z=${lastGlobalPos.z.toFixed(2)}`
-          );
-        }
-      }, 500);
+      // For continuous mode, periodically update the global coordinate while the marker is visible.
+      if (anchoringMode === "continuous") {
+        setInterval(() => {
+          if (markerEl.object3D.visible) {
+            let targetPos = new THREE.Vector3();
+            markerEl.object3D.getWorldPosition(targetPos);
+            lastGlobalPos.lerp(targetPos, smoothingFactor);
+            console.log(
+              `Continuous mode: updated global position: x=${lastGlobalPos.x.toFixed(2)}, y=${lastGlobalPos.y.toFixed(2)}, z=${lastGlobalPos.z.toFixed(2)}`
+            );
+          }
+        }, 500);
+      }
       
-      // Optionally, log the marker's transformation every 2 seconds.
+      // Optional logging of the marker's transformation.
       if (markerEl.object3D) {
         setInterval(() => {
           const pos = markerEl.object3D.position;
@@ -101,7 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
       controller.abort();
     }, timeoutMs);
   
-    // Fetch model data using the POST request with JSON payload.
+    // Fetch model data using the POST request with a JSON payload.
     fetch(endpoint, {
       method: 'POST',
       headers: {
