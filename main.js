@@ -1,4 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Global variable to keep track of the model's last known world position.
+    let lastGlobalPos = new THREE.Vector3();
+    // Smoothing factor between 0 and 1 (lower values = more smoothing).
+    const smoothingFactor = 0.2;
+  
     // Log when the A-Frame scene is loaded.
     const sceneEl = document.querySelector('a-scene');
     if (sceneEl) {
@@ -7,45 +12,60 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   
-    // Get the dummy box element (the cube) so we can reparent it later.
-    const dummyBox = document.getElementById('dummy-box');
+    // Get the model that was fetched (the AR content).
+    const modelEntity = document.getElementById('model-container');
   
-    // Attach marker event listeners to log tracker events and reparent the cube.
+    // Attach marker event listeners. We'll use these to update our global coordinate
+    // and to reparent the model container so that it either tracks the marker or
+    // stays fixed at its last known (and smoothed) position.
     const markerEl = document.getElementById('marker');
     if (markerEl) {
       markerEl.addEventListener('markerFound', () => {
         console.log('Marker found!');
-        // When marker is found, attach the dummy cube as a child so it follows the marker.
-        // Only reparent if needed.
-        if (dummyBox.parentNode !== markerEl) {
-          // Compute current world position before reparenting (optional—if you want to persist any offset).
-          const worldPos = new THREE.Vector3();
-          dummyBox.object3D.getWorldPosition(worldPos);
-          console.log('DummyBox world position before reparenting:', worldPos);
+        // Update global position from the model's (or marker's) world coordinates.
+        let targetPos = new THREE.Vector3();
+        markerEl.object3D.getWorldPosition(targetPos);
+        lastGlobalPos.copy(targetPos); // initialize smoothed position
+        console.log('Updating global position on markerFound:', lastGlobalPos);
   
-          // Reparent the dummy box to the marker.
-          markerEl.appendChild(dummyBox);
-          // Optionally, reset its local position (so that it “sticks” at the marker’s reference point or adjust as desired)
-          dummyBox.setAttribute('position', "0 0 0");
+        // Reparent the model to the marker (if needed) to follow its transform.
+        if (modelEntity.parentNode !== markerEl) {
+          markerEl.appendChild(modelEntity);
+          // Reset local position so it attaches correctly to the marker.
+          modelEntity.setAttribute('position', "0 0 0");
         }
-        dummyBox.setAttribute('color', 'green');
+        // (Optional) Change visual properties to indicate tracking.
+        modelEntity.setAttribute('visible', true);
       });
+  
       markerEl.addEventListener('markerLost', () => {
         console.log('Marker lost!');
-        // When marker is lost, compute the cube’s last known world position...
-        const worldPos = new THREE.Vector3();
-        dummyBox.object3D.getWorldPosition(worldPos);
-        console.log('DummyBox world position at marker lost:', worldPos);
+        // On marker lost, first update the last global position one more time.
+        let targetPos = new THREE.Vector3();
+        modelEntity.object3D.getWorldPosition(targetPos);
+        lastGlobalPos.lerp(targetPos, smoothingFactor);
+        console.log('Model last known (smoothed) world position:', lastGlobalPos);
   
-        // Detach dummy box from marker so that it stays at the last known world position.
-        // Append it back to the scene.
-        sceneEl.appendChild(dummyBox);
-        // Now update its position attribute with the world coordinates
-        dummyBox.setAttribute('position', `${worldPos.x} ${worldPos.y} ${worldPos.z}`);
-        dummyBox.setAttribute('color', 'red');
+        // Detach the model from the marker: reparent it back to the scene.
+        sceneEl.appendChild(modelEntity);
+        // Set its position to that last known world coordinate so it stays in place.
+        modelEntity.setAttribute('position', `${lastGlobalPos.x} ${lastGlobalPos.y} ${lastGlobalPos.z}`);
       });
   
-      // Add periodic logging of marker's transformation.
+      // Periodically update the global position using a smoothing function.
+      setInterval(() => {
+        if (markerEl.object3D.visible) {
+          let targetPos = new THREE.Vector3();
+          markerEl.object3D.getWorldPosition(targetPos);
+          // Smoothly interpolate the current smoothed position toward the new measurement.
+          lastGlobalPos.lerp(targetPos, smoothingFactor);
+          console.log(
+            `Smoothed global position updated: x=${lastGlobalPos.x.toFixed(2)}, y=${lastGlobalPos.y.toFixed(2)}, z=${lastGlobalPos.z.toFixed(2)}`
+          );
+        }
+      }, 500);
+      
+      // Optionally, log the marker's transformation every 2 seconds.
       if (markerEl.object3D) {
         setInterval(() => {
           const pos = markerEl.object3D.position;
@@ -81,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
       controller.abort();
     }, timeoutMs);
   
-    // Fetch model data using POST.
+    // Fetch model data using the POST request with JSON payload.
     fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -97,6 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
       })
       .then(data => {
         console.log("Raw webhook response data:", data);
+  
         // Parse each entry's 'data' property containing JSON glTF content.
         const parsedModels = data.map((entry, index) => {
           if (!entry.data) {
@@ -137,13 +158,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
   
         // Set the initially fetched model.
-        let currentIndex = 0;
-        const modelEntity = document.getElementById('model-container');
-        console.log("Setting initial model URL:", modelUrls[currentIndex]);
-        modelEntity.setAttribute('gltf-model', modelUrls[currentIndex]);
+        console.log("Setting initial model URL:", modelUrls[0]);
+        modelEntity.setAttribute('gltf-model', modelUrls[0]);
   
-        // If multiple models are available, cycle through them every 5 seconds.
+        // If there are multiple models, cycle through them every 5 seconds.
         if (modelUrls.length > 1) {
+          let currentIndex = 0;
           console.log("Multiple models detected. Cycling through models every 5 seconds.");
           setInterval(() => {
             currentIndex = (currentIndex + 1) % modelUrls.length;
