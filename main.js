@@ -23,30 +23,21 @@ document.addEventListener('DOMContentLoaded', () => {
   
     // Fetch model data using the POST request with JSON payload
     fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ id: modelId }),
-        signal: controller.signal
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ id: modelId }),
+      signal: controller.signal
+    })
+      .then(response => {
+        clearTimeout(timeoutID);
+        console.log("HTTP response status:", response.status);
+        return response.json();
       })
-        .then(response => {
-          clearTimeout(timeoutID);
-          console.log("HTTP response status:", response.status);
-          return response.json();
-        })
-        .then(data => {
-          console.log("Raw webhook response data:", data);
-          // Continue processing...
-        })
-        .catch(error => {
-          if (error.name === 'AbortError') {
-            console.error("Fetch request aborted due to timeout.");
-          } else {
-            console.error("Error fetching models:", error);
-          }
-        });
-    });
+      .then(data => {
+        console.log("Raw webhook response data:", data);
+  
         // Parse each entry's 'data' property which should contain the JSON glTF content
         const parsedModels = data.map((entry, index) => {
           if (!entry.data) {
