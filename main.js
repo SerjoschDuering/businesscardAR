@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
         childEl.object3D.scale
       );
     }
+    
     // Helper function: AR.js may apply the marker transform to a child group.
     // This function returns the marker’s world position from the proper object.
     function getMarkerWorldPosition(markerEl) {
