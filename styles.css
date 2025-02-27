@@ -1,0 +1,7 @@
+/* Minimal CSS for a full-screen AR experience */
+body {
+    margin: 0;
+    overflow: hidden;
+    font-family: Arial, sans-serif;
+  }
+  
